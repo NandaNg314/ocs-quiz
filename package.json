@@ -7,6 +7,7 @@
     "dev": "wrangler dev --port 8790",
     "build:web": "npm --prefix web run build",
     "deploy": "npm run build:web && wrangler deploy",
+    "deploy:local": "npm run build:web && wrangler deploy --config wrangler.local.toml",
     "typecheck": "tsc --noEmit",
     "db:init": "wrangler d1 execute ocs-quiz-db --file=./schema.sql",
     "db:init:remote": "wrangler d1 execute ocs-quiz-db --remote --file=./schema.sql"

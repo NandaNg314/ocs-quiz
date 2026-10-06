@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Detail } from './Detail';
 import { LogList } from './LogList';
+import { ModelHub } from './ModelHub';
 import { timeParts, type LogRow } from './format';
-import { IconImage, IconLogout, IconMoon, IconRefresh, IconSearch, IconSun } from './icons';
+import { IconCpu, IconImage, IconLogout, IconMoon, IconRefresh, IconSearch, IconSun } from './icons';
 import { Lightbox, type ZoomTarget } from './rich';
 
 const TOKEN_KEY = 'ocs-quiz-token';
@@ -85,6 +86,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [zoom, setZoom] = useState<ZoomTarget | null>(null);
+  const [tab, setTab] = useState<'logs' | 'models'>('logs');
 
   const rowsRef = useRef<LogRow[]>([]);
   /** 每次请求递增; 只有最新一次请求的响应会被采用 (如切换条数时丢弃旧条数的轮询结果) */
@@ -273,98 +275,137 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <strong>OCS Quiz</strong>
-          <span className="muted">日志</span>
-        </div>
-        <label className="search">
-          <IconSearch />
-          <span className="sr-only">搜索</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索题目、选项、答案、错误、IP…"
-          />
-        </label>
-        <div className="seg" role="group" aria-label="按状态筛选">
-          {FILTERS.map((f) => (
-            <button key={f.key} type="button" aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
-              {f.key === 'images' && <IconImage size={14} />}
-              {f.label}
+          <div className="tab-group" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'logs'}
+              className={`tab-btn${tab === 'logs' ? ' active' : ''}`}
+              onClick={() => setTab('logs')}
+            >
+              答题日志
             </button>
-          ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'models'}
+              className={`tab-btn${tab === 'models' ? ' active' : ''}`}
+              onClick={() => setTab('models')}
+            >
+              <IconCpu size={14} /> 模型管理
+            </button>
+          </div>
         </div>
-        <span className="grow" />
-        <span className="muted small">
-          最近 {rows.length} 条 · 成功率 {rate}%
-        </span>
-        <label className="limit muted small">
-          条数
-          <select
-            className="btn btn-sm"
-            value={limit}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              setLimit(v);
-              void load(token, v);
-            }}
-          >
-            <option value={20}>20</option>
-            <option value={50}>50</option>
-            <option value={200}>200</option>
-          </select>
-        </label>
-        {themeToggle}
-        <button
-          type="button"
-          className="btn live"
-          aria-pressed={autoRefresh}
-          onClick={() => {
-            if (!autoRefresh) void load(token, limit, true);
-            setAutoRefresh(!autoRefresh);
-          }}
-          title={autoRefresh ? `每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新，点击暂停` : '自动刷新已暂停，点击开启'}
-        >
-          <span className="live-dot" aria-hidden="true" />
-          实时刷新
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => void load(token, limit)}
-          disabled={loading}
-          aria-busy={loading}
-          title={refreshedAt ? `更新于 ${refreshedAt}` : undefined}
-        >
-          <span className={`refresh-icon${loading ? ' spinning' : ''}`}>
-            <IconRefresh />
-          </span>
-          刷新
-        </button>
+
+        {tab === 'logs' ? (
+          <>
+            <label className="search">
+              <IconSearch />
+              <span className="sr-only">搜索</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索题目、选项、答案、错误、IP…"
+              />
+            </label>
+            <div className="seg" role="group" aria-label="按状态筛选">
+              {FILTERS.map((f) => (
+                <button key={f.key} type="button" aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
+                  {f.key === 'images' && <IconImage size={14} />}
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <span className="grow" />
+            <span className="muted small">
+              最近 {rows.length} 条 · 成功率 {rate}%
+            </span>
+            <label className="limit muted small">
+              条数
+              <select
+                className="btn btn-sm"
+                value={limit}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setLimit(v);
+                  void load(token, v);
+                }}
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={200}>200</option>
+              </select>
+            </label>
+            {themeToggle}
+            <button
+              type="button"
+              className="btn live"
+              aria-pressed={autoRefresh}
+              onClick={() => {
+                if (!autoRefresh) void load(token, limit, true);
+                setAutoRefresh(!autoRefresh);
+              }}
+              title={autoRefresh ? `每 ${AUTO_REFRESH_MS / 1000} 秒自动刷新，点击暂停` : '自动刷新已暂停，点击开启'}
+            >
+              <span className="live-dot" aria-hidden="true" />
+              实时刷新
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void load(token, limit)}
+              disabled={loading}
+              aria-busy={loading}
+              title={refreshedAt ? `更新于 ${refreshedAt}` : undefined}
+            >
+              <span className={`refresh-icon${loading ? ' spinning' : ''}`}>
+                <IconRefresh />
+              </span>
+              刷新
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="grow" />
+            {themeToggle}
+          </>
+        )}
+
         <button type="button" className="btn icon-btn" onClick={logout} aria-label="退出">
           <IconLogout />
         </button>
       </header>
+
       {error && <p className="banner-error">{error}</p>}
-      <div className="layout">
-        <LogList
-          rows={visible}
-          total={rows.length}
-          selectedId={selected?.id ?? null}
-          following={selectedId === null}
-          freshAfter={freshAfter}
-          refreshedAt={refreshedAt}
-          timeoutMs={timeoutMs}
-          onSelect={setSelectedId}
-          loading={loading}
-        />
-        <main className="detail">
-          {selected ? (
-            <Detail key={selected.id} row={selected} timeoutMs={timeoutMs} onZoom={setZoom} />
-          ) : (
-            <p className="detail-empty">{loading ? '加载中…' : '暂无日志记录'}</p>
-          )}
-        </main>
-      </div>
+
+      {tab === 'logs' ? (
+        <div className="layout">
+          <LogList
+            rows={visible}
+            total={rows.length}
+            selectedId={selected?.id ?? null}
+            following={selectedId === null}
+            freshAfter={freshAfter}
+            refreshedAt={refreshedAt}
+            timeoutMs={timeoutMs}
+            onSelect={setSelectedId}
+            loading={loading}
+          />
+          <main className="detail">
+            {selected ? (
+              <Detail key={selected.id} row={selected} timeoutMs={timeoutMs} onZoom={setZoom} />
+            ) : (
+              <p className="detail-empty">{loading ? '加载中…' : '暂无日志记录'}</p>
+            )}
+          </main>
+        </div>
+      ) : (
+        <div className="model-hub-container">
+          <ModelHub token={token} />
+        </div>
+      )}
+
       {zoom && <Lightbox target={zoom} onClose={() => setZoom(null)} />}
     </div>
   );

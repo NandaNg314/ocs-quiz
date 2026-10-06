@@ -7,3 +7,6 @@ dist/
 .env*
 *.log
 .DS_Store
+important_backup.txt
+*backup*.txt
+wrangler.local.toml

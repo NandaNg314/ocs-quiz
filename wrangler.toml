@@ -2,6 +2,11 @@ name = "ocs-quiz"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+# 自定义域名示例（可选）
+# routes = [
+#   { pattern = "quiz.example.com", custom_domain = true }
+# ]
+
 # React 前端静态资源 (npm run build:web 后生成)
 [assets]
 directory = "./dist"
@@ -21,7 +26,7 @@ LOG_ENABLED = "true"
 binding = "DB"
 database_name = "ocs-quiz-db"
 # 创建数据库: wrangler d1 create ocs-quiz-db, 然后将输出的 database_id 填入此处
-database_id = "b38b1e17-777e-43ab-85d1-7b395e7cda30"
+database_id = "这里换成你自己的 database_id"
 
 [observability]
 enabled = false
@@ -38,4 +43,3 @@ invocation_logs = true
 enabled = false
 persist = true
 head_sampling_rate = 1
-

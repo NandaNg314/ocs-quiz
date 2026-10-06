@@ -24,18 +24,19 @@ export function llmTimeoutMs(env: Env): number {
 
 export function buildSystemPrompt(): string {
   return [
-    '你是在线课程答题助手。根据题目、选项与图片, 给出正确答案。',
-    '必须只输出一个 JSON 对象, 禁止输出任何其他文字、解释或代码块:',
-    '{"answers": ["答案1", "答案2"], "reason": "一句话理由"}',
+    '你是在线课程专业答题助手。根据题目、选项与图片，给出绝对准确的答案。',
+    '必须严格只输出一个合法 JSON 对象，禁止输出任何其他文字、说明或 markdown 代码块。',
+    '必须按以下顺序输出（先在 reason 字段中进行简要分析推导，再在 answers 中给出答案）：',
+    '{"reason": "简要分析考点与各选项对错", "answers": ["答案1", "答案2"]}',
     '',
-    '答案规则:',
-    '1. 单选(single): answers 只含 1 个元素, 输出选项字母, 如 "A"。',
-    '2. 多选(multiple): answers 含所有正确选项的字母, 按字母序, 如 ["A","C","D"]。',
-    '3. 判断(judgement): answers 含 1 个元素, 输出 "对" 或 "错"; 若选项带明确字母(如 A.对 B.错), 优先输出字母。',
-    '4. 填空(completion): answers 每个元素对应一个空, 多个空作为数组的多个元素, 不要在答案内部使用任何分隔符。',
-    '5. 题目类型未知(unknown)时: 根据选项数量自行判断单选/多选/判断, 按对应规则输出。',
-    '6. 题目信息不足无法作答时, 输出 {"answers": [], "reason": "原因"}。',
-    '7. 图片题必须结合图片内容作答。'
+    '【答案规则与题型特别要求】:',
+    '1. 单选(single): answers 数组只含 1 个元素，输出对应选项的大写字母，如 ["A"]。',
+    '2. 多选(multiple): 【极重要】多选题必须选择 2 个或 2 个以上正确选项（严禁只返回 1 个选项！多选题绝对不可单选）。请逐一甄别所有选项，找出全部符合题意的选项，按字母升序输出，如 ["A", "C"] 或 ["A", "B", "D"]。',
+    '3. 判断(judgement): answers 数组只含 1 个元素。请特别注意：部分平台 A 选项是“错”而 B 选项是“对”，务必看清选项字母对应的具体含义再选择对应字母（如选项为 A.错 B.对 且陈述正确时，应输出 ["B"]）。若选项无字母，则输出 ["对"] 或 ["错"]。',
+    '4. 填空(completion): answers 数组每个元素对应一个空，按题目顺序排列，严禁在答案内部拼入任何分隔符。',
+    '5. 未知类型(unknown): 请根据题干提问方式（如含有“哪些/包括/属于...的有”通常为多选题，必须选2项以上；陈述句带括号通常为单选题；只有两项且为对错时为判断题）精准判定并按对应规则输出。',
+    '6. 信息严重不足无法作答时，输出 {"reason": "原因", "answers": []}。',
+    '7. 含图片的题目必须结合图片中的文字、图示细节作答。'
   ].join('\n');
 }
 
@@ -46,8 +47,15 @@ export function buildUserContent(
   images: string[],
   visionEnabled: boolean
 ): string | ContentPart[] {
+  const typeHint =
+    type === 'multiple'
+      ? 'multiple (【多选题特别提示】：本题为多选题，必须选出 2 个或 2 个以上正确选项，严禁只选 1 个)'
+      : type === 'judgement'
+        ? 'judgement (【判断题提示】：请特别核对各选项字母代表的具体含义)'
+        : type || 'unknown';
+
   const text = [
-    `题目类型: ${type || 'unknown'}`,
+    `题目类型: ${typeHint}`,
     title ? `题目: ${title}` : '',
     options ? `选项:\n${options}` : '',
     images.length ? `题目/选项中包含以下图片:\n${images.map((u) => `- ${u}`).join('\n')}` : ''
@@ -183,19 +191,28 @@ async function requestCompletion(
     usage?: {
       prompt_tokens?: unknown;
       completion_tokens?: unknown;
+      completion_tokens_details?: { reasoning_tokens?: unknown };
       prompt_tokens_details?: { cached_tokens?: unknown };
       prompt_cache_hit_tokens?: unknown;
     };
   };
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
+  const rawMsg = data.choices?.[0]?.message as { content?: unknown; reasoning_content?: unknown } | undefined;
+  const content =
+    typeof rawMsg?.content === 'string' && rawMsg.content.trim()
+      ? rawMsg.content
+      : typeof rawMsg?.reasoning_content === 'string'
+        ? rawMsg.reasoning_content
+        : '';
+  if (!content.trim()) {
     throw new Error('LLM 返回内容为空');
   }
+  const baseCompletionTokens = Number(data.usage?.completion_tokens) || 0;
+  const reasoningTokens = Number(data.usage?.completion_tokens_details?.reasoning_tokens) || 0;
   return {
     content,
     usage: {
       promptTokens: Number(data.usage?.prompt_tokens) || 0,
-      completionTokens: Number(data.usage?.completion_tokens) || 0,
+      completionTokens: baseCompletionTokens + reasoningTokens,
       // OpenAI 兼容: prompt_tokens_details.cached_tokens; DeepSeek: prompt_cache_hit_tokens
       cachedTokens:
         Number(data.usage?.prompt_tokens_details?.cached_tokens) ||

@@ -3,11 +3,114 @@ export interface ParsedAnswer {
   reason: string;
 }
 
+export interface ParsedOptionItem {
+  letter: string;
+  text: string;
+  raw: string;
+}
+
+/**
+ * 智能解析题目 options 字符串，兼容多种换行与标号格式：
+ * 1. 独立字母行模式（常见于超星 DOM 分割提取）：
+ *    A.
+ *    《尤丽迪茜》
+ *    B.
+ *    《阿尔切斯特》
+ * 2. 紧凑行模式（带标号）：
+ *    A. 舞剧 或 (A) 舞剧 或 A、舞剧
+ * 3. 紧凑行模式（不带标号纯文本）：
+ *    舞剧
+ *    歌剧
+ */
+export function parseOptionsList(options: string): ParsedOptionItem[] {
+  if (!options || typeof options !== 'string') return [];
+  const rawLines = options
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (rawLines.length === 0) return [];
+
+  const isPureLetterMarker = (s: string) => /^(?:\(?[A-Za-z]\)?|[A-Za-z][.、:：\s)]*)$/.test(s.trim());
+  const extractLetter = (s: string) => {
+    const m = s.match(/[A-Za-z]/);
+    return m ? m[0].toUpperCase() : '';
+  };
+
+  // 1. 检查是否存在独立字母行模式
+  let hasStandaloneLetters = false;
+  for (let i = 0; i < rawLines.length - 1; i++) {
+    if (isPureLetterMarker(rawLines[i]) && !isPureLetterMarker(rawLines[i + 1])) {
+      hasStandaloneLetters = true;
+      break;
+    }
+  }
+
+  const items: ParsedOptionItem[] = [];
+
+  if (hasStandaloneLetters) {
+    let currentLetter = '';
+    let currentText = '';
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      if (isPureLetterMarker(line)) {
+        if (currentLetter || currentText) {
+          items.push({
+            letter: currentLetter,
+            text: currentText.trim(),
+            raw: currentText.trim()
+          });
+        }
+        currentLetter = extractLetter(line);
+        currentText = '';
+      } else {
+        if (currentText) {
+          currentText += ' ' + line;
+        } else {
+          currentText = line;
+        }
+      }
+    }
+    if (currentLetter || currentText) {
+      items.push({
+        letter: currentLetter,
+        text: currentText.trim(),
+        raw: currentText.trim()
+      });
+    }
+  } else {
+    // 2. 紧凑行模式
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      const match = line.match(/^(?:\(?([A-Za-z])\)?|[A-Za-z])[.、:：\s]+\s*(.*)$/);
+      if (match) {
+        const letter = (match[1] || match[0].match(/[A-Za-z]/)?.[0] || String.fromCharCode(65 + i)).toUpperCase();
+        const text = (match[2] || '').trim();
+        items.push({
+          letter,
+          text: text || line,
+          raw: line
+        });
+      } else {
+        const autoLetter = String.fromCharCode(65 + i);
+        items.push({
+          letter: autoLetter,
+          text: line,
+          raw: line
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
 /**
  * 解析 LLM 输出为答案数组。
  *
- * LLM 被要求只输出 JSON: {"answers": [...], "reason": "..."}
- * 此处做宽松解析: 去掉代码围栏、截取 JSON 对象、兼容 answer/result 字段名。
+ * LLM 被要求输出 JSON: {"reason": "...", "answers": [...]}
+ * 此处做宽松解析: 去掉代码围栏、截取 JSON 对象、兼容 reason/analysis/explanation 与 answers/answer/result。
  * JSON 解析失败时退化为纯文本按类型拆分。
  */
 export function parseLlmAnswer(raw: string, type: string): ParsedAnswer {
@@ -18,9 +121,17 @@ export function parseLlmAnswer(raw: string, type: string): ParsedAnswer {
     const answers = Array.isArray(rawAnswers)
       ? rawAnswers.map((v: unknown) => String(v).trim()).filter(Boolean)
       : splitStringAnswers(typeof rawAnswers === 'string' ? rawAnswers : String(rawAnswers ?? ''), type);
+    const reason =
+      typeof obj.reason === 'string'
+        ? obj.reason.slice(0, 500)
+        : typeof obj.analysis === 'string'
+          ? obj.analysis.slice(0, 500)
+          : typeof obj.explanation === 'string'
+            ? obj.explanation.slice(0, 500)
+            : '';
     return {
       answers: dedupe(answers),
-      reason: typeof obj.reason === 'string' ? obj.reason.slice(0, 500) : ''
+      reason
     };
   }
   return { answers: dedupe(splitStringAnswers(text, type)), reason: '' };
@@ -68,20 +179,100 @@ function splitStringAnswers(s: string, type: string): string[] {
 }
 
 /**
- * 把选项字母答案换成对应的选项原文。
+ * 把选项字母或判断词汇换成对应的选项原文，确保 OCS 能够稳定命中页面 DOM 选项。
  *
- * OCS 发来的 options 是按行排列、不带字母的选项文本, 而 OCS 的字母兜底匹配条件苛刻
- * (多选须为未拆分的升序大写串, 判断题只认对/错类词语), 返回原文可走 OCS 的文本匹配。
- * 仅当所有答案都是落在选项范围内的单个字母时才替换, 否则原样返回。
+ * 智能增强：
+ * 1. 结构化解析选项列表，解决独立字母行错位问题（彻底修复 D -> lines[3] 取错的致命 Bug）。
+ * 2. 判断题智能极性对齐（自动匹配“对/错/正确/错误”到对应的选项行，避免 A/B 倒置）。
+ * 3. 兼容选项字母（A/B/C/D）、带前缀文本（A. 舞剧）与纯文本内容。
  */
-export function lettersToOptionTexts(answers: string[], options: string): string[] {
-  const lines = options
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const indexes = answers.map((a) => (/^[A-Za-z]$/.test(a) ? a.toUpperCase().charCodeAt(0) - 65 : -1));
-  if (indexes.length === 0 || indexes.some((i) => i < 0 || i >= lines.length)) return answers;
-  return dedupe(indexes.map((i) => lines[i]));
+export function lettersToOptionTexts(answers: string[], options: string, questionType: string = ''): string[] {
+  if (!answers || !answers.length || !options) return answers;
+  const parsed = parseOptionsList(options);
+  if (parsed.length === 0) return answers;
+
+  const letterMap = new Map<string, ParsedOptionItem>();
+  for (const opt of parsed) {
+    if (opt.letter) {
+      letterMap.set(opt.letter.toUpperCase(), opt);
+    }
+  }
+
+  const result: string[] = [];
+
+  for (const ans of answers) {
+    const rawAns = ans.trim();
+    if (!rawAns) continue;
+
+    // 1. 判断题语义极性匹配 ("对"/"错"/"正确"/"错误"/"√"/"×")
+    if (/^(对|错|正确|错误|是|否|√|×|true|false)$/i.test(rawAns)) {
+      const isPositive = /^(对|正确|是|√|true)$/i.test(rawAns);
+      let matchedOpt: ParsedOptionItem | null = null;
+      for (const opt of parsed) {
+        if (isPositive) {
+          if (opt.text.includes('对') || opt.text.includes('正确') || opt.text.includes('√') || opt.text.includes('是')) {
+            matchedOpt = opt;
+            break;
+          }
+        } else {
+          if (opt.text.includes('错') || opt.text.includes('错误') || opt.text.includes('×') || opt.text.includes('否')) {
+            matchedOpt = opt;
+            break;
+          }
+        }
+      }
+      if (matchedOpt) {
+        result.push(matchedOpt.raw || matchedOpt.text);
+        continue;
+      }
+    }
+
+    // 2. 单个大写字母 (如 "A", "B", "C", "D")
+    const letterMatch = rawAns.match(/^[A-Za-z]$/);
+    if (letterMatch) {
+      const char = letterMatch[0].toUpperCase();
+      const opt = letterMap.get(char);
+      if (opt) {
+        result.push(opt.raw || opt.text);
+        continue;
+      }
+    }
+
+    // 3. 带有字母前缀的答案 (如 "A. 舞剧" 或 "A 舞剧")
+    const prefixMatch = rawAns.match(/^[A-Za-z][.、:：\s]+(.*)$/);
+    if (prefixMatch) {
+      const char = rawAns[0].toUpperCase();
+      const opt = letterMap.get(char);
+      if (opt) {
+        result.push(opt.raw || opt.text);
+        continue;
+      }
+    }
+
+    // 4. 选项文本精确或模糊匹配 (如模型直接返回 "《达芙妮》" 或 "达芙妮")
+    let foundByText: ParsedOptionItem | null = null;
+    for (const opt of parsed) {
+      if (opt.text === rawAns || opt.raw === rawAns) {
+        foundByText = opt;
+        break;
+      }
+      const cleanAns = rawAns.replace(/[《》""''“”‘’\s]/g, '');
+      const cleanOpt = opt.text.replace(/[《》""''“”‘’\s]/g, '');
+      if (cleanAns && cleanOpt && (cleanAns === cleanOpt || cleanOpt.includes(cleanAns) || cleanAns.includes(cleanOpt))) {
+        foundByText = opt;
+        break;
+      }
+    }
+    if (foundByText) {
+      result.push(foundByText.raw || foundByText.text);
+      continue;
+    }
+
+    // 5. 兜底原样返回
+    result.push(rawAns);
+  }
+
+  return dedupe(result);
 }
 
 function dedupe(items: string[]): string[] {

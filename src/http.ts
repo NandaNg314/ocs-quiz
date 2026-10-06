@@ -1,7 +1,7 @@
 /** CORS 头:OCS 在浏览器里用 fetch 跨域调用,必须放行 */
 export const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
 };

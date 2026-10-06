@@ -178,18 +178,82 @@ export interface RowView {
   returnedIsMsg: boolean;
 }
 
-export function analyzeRow(row: LogRow): RowView {
-  const answers = parseAnswers(row.answers);
-  const lines = row.options
+export function parseOptionItems(options: string): Array<{ letter: string; text: string; raw: string }> {
+  if (!options) return [];
+  const rawLines = options
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
-  const isChoice = lines.length > 0 && row.question_type !== 'completion';
-  // 新日志存选项原文, 修复前的旧日志存字母, 两种都要能匹配
+  if (rawLines.length === 0) return [];
+
+  const isPureLetterMarker = (s: string) => /^(?:\(?[A-Za-z]\)?|[A-Za-z][.、:：\s)]*)$/.test(s.trim());
+  const extractLetter = (s: string) => {
+    const m = s.match(/[A-Za-z]/);
+    return m ? m[0].toUpperCase() : '';
+  };
+
+  let hasStandaloneLetters = false;
+  for (let i = 0; i < rawLines.length - 1; i++) {
+    if (isPureLetterMarker(rawLines[i]) && !isPureLetterMarker(rawLines[i + 1])) {
+      hasStandaloneLetters = true;
+      break;
+    }
+  }
+
+  const items: Array<{ letter: string; text: string; raw: string }> = [];
+  if (hasStandaloneLetters) {
+    let currentLetter = '';
+    let currentText = '';
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      if (isPureLetterMarker(line)) {
+        if (currentLetter || currentText) {
+          items.push({ letter: currentLetter, text: currentText.trim(), raw: currentText.trim() });
+        }
+        currentLetter = extractLetter(line);
+        currentText = '';
+      } else {
+        currentText = currentText ? `${currentText} ${line}` : line;
+      }
+    }
+    if (currentLetter || currentText) {
+      items.push({ letter: currentLetter, text: currentText.trim(), raw: currentText.trim() });
+    }
+  } else {
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      const match = line.match(/^(?:\(?([A-Za-z])\)?|[A-Za-z])[.、:：\s]+\s*(.*)$/);
+      if (match) {
+        const letter = (match[1] || match[0].match(/[A-Za-z]/)?.[0] || String.fromCharCode(65 + i)).toUpperCase();
+        const text = (match[2] || '').trim();
+        items.push({ letter, text: text || line, raw: line });
+      } else {
+        items.push({ letter: String.fromCharCode(65 + i), text: line, raw: line });
+      }
+    }
+  }
+  return items;
+}
+
+export function analyzeRow(row: LogRow): RowView {
+  const answers = parseAnswers(row.answers);
+  const parsedOpts = parseOptionItems(row.options);
+  const isChoice = parsedOpts.length > 0 && row.question_type !== 'completion';
   const options: OptionView[] = isChoice
-    ? lines.map((text, i) => {
-        const letter = String.fromCharCode(65 + i);
-        return { letter, text, selected: answers.some((a) => a.trim() === text || a.trim().toUpperCase() === letter) };
+    ? parsedOpts.map((opt) => {
+        const selected = answers.some((a) => {
+          const cleanA = a.trim();
+          const cleanText = opt.text.trim();
+          const cleanRaw = opt.raw.trim();
+          return (
+            cleanA === opt.letter ||
+            cleanA === cleanText ||
+            cleanA === cleanRaw ||
+            cleanText.includes(cleanA) ||
+            cleanA.includes(cleanText)
+          );
+        });
+        return { letter: opt.letter, text: opt.text, selected };
       })
     : [];
   const blanks = isChoice ? [] : answers;
