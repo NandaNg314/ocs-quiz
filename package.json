@@ -12,7 +12,8 @@
     "db:init": "wrangler d1 execute ocs-quiz-db --file=./schema.sql",
     "db:init:remote": "wrangler d1 execute ocs-quiz-db --remote --file=./schema.sql",
     "clip:banner": "powershell -STA -File scripts/save-clipboard.ps1 banner",
-    "clip:webui": "powershell -STA -File scripts/save-clipboard.ps1 webui"
+    "clip:webui": "powershell -STA -File scripts/save-clipboard.ps1 webui",
+    "clip:watch": "powershell -STA -File scripts/watch-clipboard.ps1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",
