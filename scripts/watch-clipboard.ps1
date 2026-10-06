@@ -12,11 +12,11 @@ if (-not (Test-Path $OutputDir)) {
 $fullOutputDir = (Resolve-Path $OutputDir).Path
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host " [剪贴板图片自动存图并复制路径] 监听中..." -ForegroundColor Green
-Write-Host " 使用方式: 随时按 Win+Shift+S 截图" -ForegroundColor White
-Write-Host " 监听器会自动将图片存为文件，并把文件路径复制到剪贴板！" -ForegroundColor White
-Write-Host " 然后在 CLI 聊天框直接按 Ctrl+V 粘贴路径即可！" -ForegroundColor Yellow
-Write-Host " 按 Ctrl+C 可随时退出" -ForegroundColor Gray
+Write-Host " [Clipboard Image Watcher Running...]" -ForegroundColor Green
+Write-Host " How to use: Press Win+Shift+S to capture a screenshot." -ForegroundColor White
+Write-Host " It will automatically save image and COPY its path to clipboard." -ForegroundColor White
+Write-Host " Then press Ctrl+V in your CLI to paste the path directly!" -ForegroundColor Yellow
+Write-Host " Press Ctrl+C to exit." -ForegroundColor Gray
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 while ($true) {
@@ -31,12 +31,12 @@ while ($true) {
                 $img.Dispose()
                 
                 [System.Windows.Forms.Clipboard]::SetText($filePath)
-                Write-Host "[OK] 截图已存: $filename (路径已拷入剪贴板，可直接在 CLI 粘贴)" -ForegroundColor Green
+                Write-Host "[OK] Saved: $filename -> Path copied to clipboard!" -ForegroundColor Green
                 Start-Sleep -Milliseconds 1500
             }
         }
     } catch {
-        # 忽略瞬时剪贴板锁定
+        # Ignore momentary clipboard lock
     }
     Start-Sleep -Milliseconds 500
 }
