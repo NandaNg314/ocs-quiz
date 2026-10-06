@@ -10,7 +10,9 @@
     "deploy:local": "npm run build:web && wrangler deploy --config wrangler.local.toml",
     "typecheck": "tsc --noEmit",
     "db:init": "wrangler d1 execute ocs-quiz-db --file=./schema.sql",
-    "db:init:remote": "wrangler d1 execute ocs-quiz-db --remote --file=./schema.sql"
+    "db:init:remote": "wrangler d1 execute ocs-quiz-db --remote --file=./schema.sql",
+    "clip:banner": "powershell -STA -File scripts/save-clipboard.ps1 banner",
+    "clip:webui": "powershell -STA -File scripts/save-clipboard.ps1 webui"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",
