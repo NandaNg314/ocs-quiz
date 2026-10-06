@@ -12,7 +12,7 @@ import {
   testConnection
 } from './models';
 import { buildOcsConfig, TOKEN_PLACEHOLDER } from './ocs-config';
-import { lettersToOptionTexts, parseLlmAnswer } from './parse';
+import { lettersToOptionTexts, normalizeQuestionType, parseLlmAnswer } from './parse';
 
 export interface Env {
   LLM_TEMPERATURE?: string;
@@ -209,7 +209,7 @@ async function handleSearch(request: Request, env: Env): Promise<Response> {
 
   const title = typeof body.title === 'string' ? body.title.slice(0, 3000) : '';
   const options = typeof body.options === 'string' ? body.options.slice(0, 6000) : '';
-  const type = typeof body.type === 'string' && body.type ? body.type : 'unknown';
+  const type = normalizeQuestionType(body.type, title, options);
   const thinkEffort = typeof body.thinkEffort === 'string' ? body.thinkEffort.trim() : '';
   if (!title.trim() && !options.trim()) {
     await log({

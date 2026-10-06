@@ -107,6 +107,57 @@ export function parseOptionsList(options: string): ParsedOptionItem[] {
 }
 
 /**
+ * 标准化题目类型，兼容超星学习通、智慧树等各大平台的多种入参格式：
+ * 1. 英文格式: single, multiple, judgement, completion
+ * 2. 数字格式: 1 (单选), 2 (多选), 3 (判断), 4 (填空)
+ * 3. 中文格式: 单选, 多选, 判断, 填空, 单选题, 多选题, 判断题, 填空题
+ * 4. 题干标注推断: 如题干含 【多选题】或 [判断题] 时自动推断
+ * 5. 选项特征推断: 仅两项且表述对错时推断为判断题
+ */
+export function normalizeQuestionType(rawType: unknown, title: string = '', options: string = ''): string {
+  const s = String(rawType ?? '').trim().toLowerCase();
+
+  // 1. 显式类型匹配
+  if (s === 'single' || s.includes('single') || s === '0' || s === '1' || s.includes('单选')) {
+    return 'single';
+  }
+  if (s === 'multiple' || s.includes('multi') || s === '2' || s.includes('多选')) {
+    return 'multiple';
+  }
+  if (s === 'judgement' || s === 'judgment' || s.includes('judge') || s === '3' || s.includes('判断')) {
+    return 'judgement';
+  }
+  if (s === 'completion' || s.includes('complete') || s === '4' || s.includes('填空')) {
+    return 'completion';
+  }
+
+  // 2. 从题干标题推断
+  const cleanTitle = title.trim();
+  if (/(?:\[|【|\(|（)\s*多选(?:题)?\s*(?:\]|】|\)|）)/.test(cleanTitle) || /(?:^|\s)多选题/.test(cleanTitle)) {
+    return 'multiple';
+  }
+  if (/(?:\[|【|\(|（)\s*单选(?:题)?\s*(?:\]|】|\)|）)/.test(cleanTitle) || /(?:^|\s)单选题/.test(cleanTitle)) {
+    return 'single';
+  }
+  if (/(?:\[|【|\(|（)\s*判断(?:题)?\s*(?:\]|】|\)|）)/.test(cleanTitle) || /(?:^|\s)判断题/.test(cleanTitle)) {
+    return 'judgement';
+  }
+  if (/(?:\[|【|\(|（)\s*填空(?:题)?\s*(?:\]|】|\)|）)/.test(cleanTitle) || /(?:^|\s)填空题/.test(cleanTitle)) {
+    return 'completion';
+  }
+
+  // 3. 从选项特征推断
+  if (options) {
+    const lines = options.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 2 && lines.every((l) => /(对|错|正确|错误|是|否|√|×|true|false)/i.test(l))) {
+      return 'judgement';
+    }
+  }
+
+  return s || 'unknown';
+}
+
+/**
  * 解析 LLM 输出为答案数组。
  *
  * LLM 被要求输出 JSON: {"reason": "...", "answers": [...]}
@@ -118,9 +169,6 @@ export function parseLlmAnswer(raw: string, type: string): ParsedAnswer {
   const obj = tryExtractJson(text);
   if (obj) {
     const rawAnswers = obj.answers ?? obj.answer ?? obj.result;
-    const answers = Array.isArray(rawAnswers)
-      ? rawAnswers.map((v: unknown) => String(v).trim()).filter(Boolean)
-      : splitStringAnswers(typeof rawAnswers === 'string' ? rawAnswers : String(rawAnswers ?? ''), type);
     const reason =
       typeof obj.reason === 'string'
         ? obj.reason.slice(0, 500)
@@ -129,6 +177,42 @@ export function parseLlmAnswer(raw: string, type: string): ParsedAnswer {
           : typeof obj.explanation === 'string'
             ? obj.explanation.slice(0, 500)
             : '';
+
+    let answers: string[] = [];
+    if (Array.isArray(rawAnswers)) {
+      for (const item of rawAnswers) {
+        const str = String(item ?? '').trim();
+        if (!str) continue;
+        // 如果数组元素内包含诸如 "A, B" 或 "AB" 或 "A、B"，针对选择/判断题拆分成独立的字母
+        if (type !== 'completion') {
+          const split = splitStringAnswers(str, type);
+          if (split.length > 1) {
+            answers.push(...split);
+            continue;
+          }
+        }
+        answers.push(str);
+      }
+    } else {
+      answers = splitStringAnswers(typeof rawAnswers === 'string' ? rawAnswers : String(rawAnswers ?? ''), type);
+    }
+
+    // 多选题兜底：若模型只给了 1 个选项，尝试从推导理由 (reason) 中检索补充遗漏的正确选项
+    if (type === 'multiple' && answers.length === 1 && reason) {
+      const ansMatch = reason.match(/(?:正确答案(?:为|是)|符合题意(?:的)?(?:为|是)|正确选项(?:为|是)|故选|应选|因此选)\s*([A-Za-z\s,，、和与及]+)/i);
+      if (ansMatch) {
+        const extracted = splitStringAnswers(ansMatch[1], 'multiple');
+        if (extracted.length >= 2) {
+          answers = extracted;
+        }
+      }
+    }
+
+    // 多选题按字母升序排序
+    if (type === 'multiple' && answers.every((a) => /^[A-Za-z]$/.test(a.trim()))) {
+      answers.sort((a, b) => a.trim().toUpperCase().localeCompare(b.trim().toUpperCase()));
+    }
+
     return {
       answers: dedupe(answers),
       reason
@@ -168,12 +252,12 @@ function splitStringAnswers(s: string, type: string): string[] {
       .map((t) => t.trim())
       .filter(Boolean);
   }
-  const cleaned = s.replace(/[,，.。、;；#\s]+/g, '');
+  const cleaned = s.replace(/[,，.。、;；#\s和与及]+/g, '');
   if (/^[A-Za-z]+$/.test(cleaned)) {
     return [...cleaned].map((c) => c.toUpperCase());
   }
   return s
-    .split(/[,，.。、;；#|\s]+/)
+    .split(/[,，.。、;；#|\s和与及]+/)
     .map((t) => t.trim())
     .filter(Boolean);
 }
