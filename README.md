@@ -1,7 +1,7 @@
 # OCS Quiz 增强版 (OCS AI 智能题库)
 
 <p align="center">
-  <img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/352c89c8-a1f2-4c2a-8762-f99b81747dbd" />
+  <img src="./docs/images/dashboard.png" alt="OCS Quiz AI 智能题库" width="100%" />
 </p>
 
 给 [OCS 网课助手](https://docs.ocsjs.com/) 用的 AI 题库，基于 Cloudflare Workers + D1 架构。把 OCS 发来的题目智能分发给大模型深度推理作答，再将标准化答案返回给 OCS 自动填写。
@@ -167,20 +167,34 @@ npx wrangler secret put WEBUI_TOKEN
 
 ## 三、管理后台与模型热切换使用方法
 
-打开浏览器访问你的域名 `https://<你的域名>/`，输入你设置的 `WEBUI_TOKEN` 即可登录。
+打开浏览器访问你的域名 `https://<你的域名>/`，输入你设置的 `WEBUI_TOKEN` 即可登录管理后台。
+
+### 1. 模型中心 (Model Hub) —— 一键热切换与健康诊断
+集中管理所有大模型 API Key，OCS 网课端终身免改配置：
+- **集中管理**：保存多家服务商 Key，后台对敏感 Key 自动脱敏加密展示（`sk-****12a4`）。
+- **一键测速**：点击卡片上的「测速连接」，Cloudflare 节点直接发起连通性握手，毫秒级反馈延迟。
+- **秒级热切换**：点击任意模型卡片右上角 **【⚡ 设为激活】**，下一次网课搜题就会立即自动切换为该模型，**OCS 插件端无需做任何修改**！
 
 <p align="center">
-  <img width="2320" height="1237" alt="image" src="https://github.com/user-attachments/assets/86887f58-da26-4c5b-9604-c13a3138d63b" />
+  <img src="./docs/images/model-hub.png" alt="模型管理看板 (Model Hub)" width="100%" />
 </p>
 
-### 1. 模型中心 (Model Hub)
-- **添加模型**：点击右上角「模型管理」$\rightarrow$「添加模型」，填入配置名称、接口地址（Base URL）、API Key 和模型名。
-- **一键测速**：保存后点击卡片上的「测速连接」，Cloudflare 节点会直接与模型服务商发起握手，毫秒级反馈连通状态与延迟。
-- **一键热切换 (设为激活)**：点击任意模型卡片右上角的 **【⚡ 设为激活】**，下一次网课搜题就会立即自动切换为该模型，**OCS 插件端无需做任何修改**！
+### 2. 快捷配置模版 —— 常用模型一键填入
+支持内置快捷模版，快速录入主流大模型（DeepSeek、硅基流动、阿里百炼通义千问、OpenAI 等）：
 
-### 2. 实时答题日志
-- 实时监控每一道题目的题干、选项、模型返回的答案、推导理由与耗时。
-- 完整展示 Token 用量与思维链（`reasoning_tokens`）消耗。
+<p align="center">
+  <img src="./docs/images/model-add.png" alt="添加/编辑模型配置模版" width="100%" />
+</p>
+
+### 3. 实时答题日志与思维链 (CoT) 推理分析
+实时展示刷题流水线，精准监控做题质量与成功率：
+- **实时统计**：展示实时成功率（实测高达 **98%+**）、答题状态与详细耗时。
+- **思维链推导**：完整展示大模型在 `reason` 中的推导逻辑与各选项对错分析，做题过程透明可溯。
+- **Token 精准计量**：展示输入/输出 Token 及思维链 Token（`reasoning_tokens`）消耗。
+
+<p align="center">
+  <img src="./docs/images/dashboard.png" alt="实时答题日志与思维链推导" width="100%" />
+</p>
 
 ---
 
