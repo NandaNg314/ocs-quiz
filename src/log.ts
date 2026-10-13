@@ -82,8 +82,8 @@ export async function logSearch(env: Env, entry: SearchLog): Promise<void> {
       .bind(
         new Date().toISOString(),
         entry.questionType,
-        entry.title.slice(0, 500),
-        entry.options.slice(0, 2000),
+        entry.title.slice(0, 3000),
+        entry.options.slice(0, 6000),
         entry.images,
         entry.model,
         entry.answers.slice(0, 1000),

@@ -453,7 +453,7 @@ export function ModelHub({ token }: ModelHubProps) {
                   <div className={`test-result-inline ${test.ok ? 'ok' : 'err'}`}>
                     {test.ok ? (
                       <>
-                        <IconCheck size={13} /> 连通正常 {test.latencyMs ? `(${test.latencyMs}ms)` : ''}
+                        <IconCheck size={13} /> 响应正常（含生成） {test.latencyMs ? `(${test.latencyMs}ms)` : ''}
                       </>
                     ) : (
                       <>
@@ -469,7 +469,7 @@ export function ModelHub({ token }: ModelHubProps) {
                     className="btn btn-sm"
                     disabled={isTesting}
                     onClick={() => handleTest(m)}
-                    title="发送测试请求，检查 Key 和网络是否正常"
+                    title="发送小型模型请求，测完整响应耗时（含模型生成）并检查 Key"
                   >
                     {isTesting ? '测试中…' : '测速连接'}
                   </button>
@@ -629,7 +629,7 @@ export function ModelHub({ token }: ModelHubProps) {
               {modalTestResult && (
                 <div className={`test-feedback-box ${modalTestResult.ok ? 'ok' : 'err'}`}>
                   {modalTestResult.ok ? (
-                    <span>✓ 测试连通正常，耗时 {modalTestResult.latencyMs}ms</span>
+                    <span>✓ 模型响应正常（含生成），耗时 {modalTestResult.latencyMs}ms</span>
                   ) : (
                     <span>✕ 测试失败: {modalTestResult.msg}</span>
                   )}

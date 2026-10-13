@@ -192,6 +192,32 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [visible, selected, zoom]);
 
+  const saveVerifiedAnswer = useCallback(
+    async (row: LogRow, answers: string[], reason: string) => {
+      const res = await fetch('/api/answers/verified', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: row.question_type, title: row.title, options: row.options, answers, reason })
+      });
+      const data = (await res.json()) as { code: number; msg?: string };
+      if (!res.ok || data.code !== 0) throw new Error(data.msg || '保存标准答案失败');
+    },
+    [token]
+  );
+
+  const removeVerifiedAnswer = useCallback(
+    async (row: LogRow) => {
+      const res = await fetch('/api/answers/verified', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: row.question_type, title: row.title, options: row.options })
+      });
+      const data = (await res.json()) as { code: number; msg?: string };
+      if (!res.ok || data.code !== 0) throw new Error(data.msg || '移除标准答案失败');
+    },
+    [token]
+  );
+
   const logout = () => {
     // 作废进行中的请求, 其响应不再写回
     seqRef.current++;
@@ -318,8 +344,11 @@ export default function App() {
               ))}
             </div>
             <span className="grow" />
-            <span className="muted small">
-              最近 {rows.length} 条 · 成功率 {rate}%
+            <span
+              className="muted small"
+              title="按日志状态统计成功返回可用答案的比例；不代表答案经标准答案验证后的正确率。"
+            >
+              最近 {rows.length} 条 · 可用答案返回率 {rate}%
             </span>
             <label className="limit muted small">
               条数
@@ -394,7 +423,14 @@ export default function App() {
           />
           <main className="detail">
             {selected ? (
-              <Detail key={selected.id} row={selected} timeoutMs={timeoutMs} onZoom={setZoom} />
+              <Detail
+                key={selected.id}
+                row={selected}
+                timeoutMs={timeoutMs}
+                onZoom={setZoom}
+                onSaveVerified={saveVerifiedAnswer}
+                onRemoveVerified={removeVerifiedAnswer}
+              />
             ) : (
               <p className="detail-empty">{loading ? '加载中…' : '暂无日志记录'}</p>
             )}

@@ -1054,6 +1054,53 @@ select.btn {
   animation: shake 0.4s ease both;
 }
 
+.verified-answer-panel {
+  margin-top: 18px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.verified-answer-panel .hint {
+  margin-top: 4px;
+}
+
+.verified-answer-panel textarea,
+.verified-answer-panel input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+}
+
+.verified-answer-panel textarea {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.5;
+}
+
+.verified-answer-panel textarea:focus,
+.verified-answer-panel input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.verified-answer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.verified-message {
+  color: var(--text2);
+  font-size: 12px;
+}
+
 /* ---------- 动效 ---------- */
 
 :root {

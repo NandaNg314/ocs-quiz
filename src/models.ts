@@ -219,26 +219,37 @@ export async function testConnection(params: {
       }),
       signal: controller.signal
     });
-    clearTimeout(timer);
+    const responseText = await res.text();
     const latencyMs = Date.now() - start;
 
     if (!res.ok) {
-      const errText = await res.text();
       let errMsg = `HTTP ${res.status}`;
       try {
-        const json = JSON.parse(errText);
+        const json = JSON.parse(responseText);
         if (json.error?.message) errMsg += `: ${json.error.message}`;
       } catch {
-        errMsg += `: ${errText.slice(0, 100)}`;
+        errMsg += `: ${responseText.slice(0, 100)}`;
       }
       return { ok: false, msg: errMsg, latencyMs };
     }
 
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      return { ok: false, msg: '请求成功，但响应不是有效 JSON', latencyMs };
+    }
+    const choices = (payload as { choices?: unknown } | null)?.choices;
+    if (!Array.isArray(choices) || choices.length === 0) {
+      return { ok: false, msg: '请求成功，但响应中没有 choices 结果', latencyMs };
+    }
+
     return { ok: true, msg: '连接成功', latencyMs };
   } catch (err: unknown) {
-    clearTimeout(timer);
     const latencyMs = Date.now() - start;
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, msg: `请求失败: ${msg}`, latencyMs };
+  } finally {
+    clearTimeout(timer);
   }
 }

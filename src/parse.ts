@@ -218,7 +218,11 @@ export function parseLlmAnswer(raw: string, type: string): ParsedAnswer {
       reason
     };
   }
-  return { answers: dedupe(splitStringAnswers(text, type)), reason: '' };
+  const answers = dedupe(splitStringAnswers(text, type));
+  if (type === 'multiple' && answers.every((answer) => /^[A-Za-z]$/.test(answer.trim()))) {
+    answers.sort((a, b) => a.trim().toUpperCase().localeCompare(b.trim().toUpperCase()));
+  }
+  return { answers, reason: '' };
 }
 
 function stripFences(text: string): string {
@@ -251,6 +255,19 @@ function splitStringAnswers(s: string, type: string): string[] {
       .split('|')
       .map((t) => t.trim())
       .filter(Boolean);
+  }
+  const separators = /[,，.。、;；#|\s和与及]+/;
+  const labelledOption = s.match(/^[A-Za-z][.、:：\s]+.+$/);
+  if (labelledOption) {
+    const labelledParts = s.split(separators).filter(Boolean);
+    if (labelledParts.length > 1 && labelledParts.every((part) => /^[A-Za-z]$/.test(part))) {
+      return labelledParts.map((part) => part.toUpperCase());
+    }
+    return [s];
+  }
+  const parts = s.split(separators).filter(Boolean);
+  if (parts.length > 1 && parts.every((part) => /^[A-Za-z]$/.test(part))) {
+    return parts.map((part) => part.toUpperCase());
   }
   const cleaned = s.replace(/[,，.。、;；#\s和与及]+/g, '');
   if (/^[A-Za-z]+$/.test(cleaned)) {
@@ -288,25 +305,17 @@ export function lettersToOptionTexts(answers: string[], options: string, questio
     const rawAns = ans.trim();
     if (!rawAns) continue;
 
-    // 1. 判断题语义极性匹配 ("对"/"错"/"正确"/"错误"/"√"/"×")
+    // 1. 判断题语义极性匹配 ("对"/"错"/"正确"/"错误"/"√"/"×"); 有多个候选时不猜
     if (/^(对|错|正确|错误|是|否|√|×|true|false)$/i.test(rawAns)) {
       const isPositive = /^(对|正确|是|√|true)$/i.test(rawAns);
-      let matchedOpt: ParsedOptionItem | null = null;
-      for (const opt of parsed) {
+      const matches = parsed.filter((opt) => {
         if (isPositive) {
-          if (opt.text.includes('对') || opt.text.includes('正确') || opt.text.includes('√') || opt.text.includes('是')) {
-            matchedOpt = opt;
-            break;
-          }
-        } else {
-          if (opt.text.includes('错') || opt.text.includes('错误') || opt.text.includes('×') || opt.text.includes('否')) {
-            matchedOpt = opt;
-            break;
-          }
+          return opt.text.includes('对') || opt.text.includes('正确') || opt.text.includes('√') || opt.text.includes('是');
         }
-      }
-      if (matchedOpt) {
-        result.push(matchedOpt.raw || matchedOpt.text);
+        return opt.text.includes('错') || opt.text.includes('错误') || opt.text.includes('×') || opt.text.includes('否');
+      });
+      if (matches.length === 1) {
+        result.push(matches[0].raw || matches[0].text);
         continue;
       }
     }
@@ -320,6 +329,8 @@ export function lettersToOptionTexts(answers: string[], options: string, questio
         result.push(opt.raw || opt.text);
         continue;
       }
+      result.push(rawAns);
+      continue;
     }
 
     // 3. 带有字母前缀的答案 (如 "A. 舞剧" 或 "A 舞剧")
@@ -331,32 +342,72 @@ export function lettersToOptionTexts(answers: string[], options: string, questio
         result.push(opt.raw || opt.text);
         continue;
       }
-    }
-
-    // 4. 选项文本精确或模糊匹配 (如模型直接返回 "《达芙妮》" 或 "达芙妮")
-    let foundByText: ParsedOptionItem | null = null;
-    for (const opt of parsed) {
-      if (opt.text === rawAns || opt.raw === rawAns) {
-        foundByText = opt;
-        break;
-      }
-      const cleanAns = rawAns.replace(/[《》""''“”‘’\s]/g, '');
-      const cleanOpt = opt.text.replace(/[《》""''“”‘’\s]/g, '');
-      if (cleanAns && cleanOpt && (cleanAns === cleanOpt || cleanOpt.includes(cleanAns) || cleanAns.includes(cleanOpt))) {
-        foundByText = opt;
-        break;
-      }
-    }
-    if (foundByText) {
-      result.push(foundByText.raw || foundByText.text);
+      result.push(rawAns);
       continue;
     }
 
-    // 5. 兜底原样返回
+    // 4. 文本匹配优先精确匹配；模糊匹配只有唯一候选时才采用，避免相似选项误选第一项
+    const clean = (value: string) => value.replace(/[《》""''“”‘’\s]/g, '').toLowerCase();
+    const cleanAns = clean(rawAns);
+    const exactMatches = parsed.filter((opt) => opt.text.trim() === rawAns || opt.raw.trim() === rawAns || clean(opt.text) === cleanAns);
+    const exactUnique = uniqueOption(exactMatches);
+    if (exactUnique) {
+      result.push(exactUnique.raw || exactUnique.text);
+      continue;
+    }
+    if (exactMatches.length > 1) {
+      result.push(rawAns);
+      continue;
+    }
+
+    const fuzzyMatches = parsed.filter((opt) => {
+      const cleanOpt = clean(opt.text);
+      return cleanAns && cleanOpt && (cleanOpt.includes(cleanAns) || cleanAns.includes(cleanOpt));
+    });
+    const fuzzyUnique = uniqueOption(fuzzyMatches);
+    if (fuzzyUnique) {
+      result.push(fuzzyUnique.raw || fuzzyUnique.text);
+      continue;
+    }
+
+    // 5. 无法唯一匹配时保留原文，后续校验会把它标为无法可靠映射
     result.push(rawAns);
   }
 
-  return dedupe(result);
+  const uniqueResults = dedupe(result);
+  if (questionType !== 'multiple') return uniqueResults;
+
+  const answerLetter = (answer: string) => {
+    const option = parsed.find((item) => item.raw.trim() === answer.trim() || item.text.trim() === answer.trim());
+    return option?.letter.toUpperCase() || '\uffff';
+  };
+  return uniqueResults.sort((a, b) => {
+    const letterA = answerLetter(a);
+    const letterB = answerLetter(b);
+    return letterA < letterB ? -1 : letterA > letterB ? 1 : 0;
+  });
+}
+
+export function validateAnswerSelection(answers: string[], options: string, questionType: string): string | null {
+  if (!answers.length) return '模型没有给出答案';
+  if ((questionType === 'single' || questionType === 'judgement') && answers.length !== 1) {
+    return questionType === 'single' ? '单选题必须只给出一个答案' : '判断题必须只给出一个答案';
+  }
+  if (questionType === 'multiple' && answers.length < 2) return '多选题必须至少给出两个答案';
+
+  if (!['single', 'multiple', 'judgement'].includes(questionType)) return null;
+  const parsed = parseOptionsList(options);
+  if (parsed.length === 0) return null;
+
+  for (const answer of answers) {
+    const matches = parsed.filter((opt) => opt.raw.trim() === answer.trim() || opt.text.trim() === answer.trim());
+    if (matches.length !== 1) return `答案「${answer.slice(0, 80)}」无法唯一对应到题目选项`;
+  }
+  return null;
+}
+
+function uniqueOption(options: ParsedOptionItem[]): ParsedOptionItem | null {
+  return options.length === 1 ? options[0] : null;
 }
 
 function dedupe(items: string[]): string[] {

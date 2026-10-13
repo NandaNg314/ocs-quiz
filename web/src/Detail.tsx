@@ -24,10 +24,27 @@ const CALLOUT_TITLE: Record<string, string> = {
  * 右侧详情; 父组件以 row.id 作 key, 切换记录时重置内部状态。
  * timeoutMs: 服务端当前的 LLM_TIMEOUT_MS, 未知时为 0 (不显示接近超时提示)
  */
-export function Detail({ row, timeoutMs, onZoom }: { row: LogRow; timeoutMs: number; onZoom: (t: ZoomTarget) => void }) {
+export function Detail({
+  row,
+  timeoutMs,
+  onZoom,
+  onSaveVerified,
+  onRemoveVerified
+}: {
+  row: LogRow;
+  timeoutMs: number;
+  onZoom: (t: ZoomTarget) => void;
+  onSaveVerified: (row: LogRow, answers: string[], reason: string) => Promise<void>;
+  onRemoveVerified: (row: LogRow) => Promise<void>;
+}) {
   const [rawOpen, setRawOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const view = useMemo(() => analyzeRow(row), [row]);
+  const [verifiedAnswers, setVerifiedAnswers] = useState(() => view.answers.join('\n'));
+  const [verifiedReason, setVerifiedReason] = useState('');
+  const [verifiedBusy, setVerifiedBusy] = useState(false);
+  const [verifiedMessage, setVerifiedMessage] = useState('');
+  const [verifiedError, setVerifiedError] = useState('');
   const tp = timeParts(row.ts);
 
   useEffect(() => {
@@ -50,6 +67,41 @@ export function Detail({ row, timeoutMs, onZoom }: { row: LogRow; timeoutMs: num
   const calloutText = row.status === 'no_answer' ? row.reason || '模型未给出答案' : row.error;
   const level = latencyLevel(row.latency_ms, timeoutMs);
   const cacheRate = row.prompt_tokens > 0 ? `(${Math.round((row.cached_tokens / row.prompt_tokens) * 100)}%)` : '';
+
+  const saveConfirmedAnswer = async () => {
+    const answers = verifiedAnswers.split(/\r?\n/).map((answer) => answer.trim()).filter(Boolean);
+    if (answers.length === 0) {
+      setVerifiedError('请至少填写一个答案');
+      setVerifiedMessage('');
+      return;
+    }
+    setVerifiedBusy(true);
+    setVerifiedError('');
+    setVerifiedMessage('');
+    try {
+      await onSaveVerified(row, answers, verifiedReason.trim());
+      setVerifiedMessage('已保存。之后遇到相同题目会优先使用此标准答案。');
+    } catch (err: unknown) {
+      setVerifiedError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerifiedBusy(false);
+    }
+  };
+
+  const forgetConfirmedAnswer = async () => {
+    if (!window.confirm('移除这道题的人工确认答案？之后将重新调用模型作答。')) return;
+    setVerifiedBusy(true);
+    setVerifiedError('');
+    setVerifiedMessage('');
+    try {
+      await onRemoveVerified(row);
+      setVerifiedMessage('已移除人工确认答案。之后将重新调用模型作答。');
+    } catch (err: unknown) {
+      setVerifiedError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerifiedBusy(false);
+    }
+  };
 
   return (
     <>
@@ -193,6 +245,37 @@ export function Detail({ row, timeoutMs, onZoom }: { row: LogRow; timeoutMs: num
           </div>
         </div>
       </div>
+
+      <section className="card verified-answer-panel">
+        <div>
+          <strong>人工确认标准答案</strong>
+          <p className="hint">只有确认正确后才保存；相同题目之后会优先使用此答案。每行一个答案，选择题可填选项字母或原文，填空题每空一行。</p>
+        </div>
+        <textarea
+          value={verifiedAnswers}
+          onChange={(e) => setVerifiedAnswers(e.target.value)}
+          rows={Math.min(Math.max(verifiedAnswers.split(/\r?\n/).length, 2), 6)}
+          placeholder="每行一个答案"
+          aria-label="人工确认标准答案"
+        />
+        <input
+          value={verifiedReason}
+          onChange={(e) => setVerifiedReason(e.target.value)}
+          maxLength={500}
+          placeholder="备注（可选）"
+          aria-label="标准答案备注"
+        />
+        <div className="verified-answer-actions">
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveConfirmedAnswer()} disabled={verifiedBusy}>
+            {verifiedBusy ? '保存中…' : '保存并用于后续答题'}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => void forgetConfirmedAnswer()} disabled={verifiedBusy}>
+            移除确认答案
+          </button>
+          {verifiedMessage && <span className="verified-message">{verifiedMessage}</span>}
+          {verifiedError && <span className="error-text">{verifiedError}</span>}
+        </div>
+      </section>
 
       {view.returned.length > 0 && (
         <div className="code">

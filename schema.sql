@@ -29,3 +29,13 @@ CREATE TABLE IF NOT EXISTS models (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS verified_answers (
+  question_key TEXT PRIMARY KEY,
+  question_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  options TEXT NOT NULL,
+  answers TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
